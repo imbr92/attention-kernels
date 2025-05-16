@@ -117,24 +117,33 @@ bool verify_matrix(float *matRef, float *matOut, int N){
     return true;
 }
 
-int div_ceil(int numerator, int denominator){
-    std::div_t res = std::div(numerator, denominator);
-    return res.rem ? (res.quot + 1) : res.quot;
-}
+void run_attn_naive(int d_head, int seq_len, float *Q, float *K,
+                    float *V, float *out, float *mat){
 
-void run_attn_naive(int M, int N, int K, float alpha, float *A, float *B,
-                     float beta, float *C){
-    // TODO: Write this
-    // dim3 gridDim(CEIL_DIV(M, 32), CEIL_DIV(N, 32));
-    // dim3 blockDim(32, 32);
-    // sgemm_naive<<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
+    // First Q @ K^T
+    dim3 mm1_gridDim(CEIL_DIV(seq_len, 32), CEIL_DIV(seq_len, 32));
+    constexpr dim3 mm1_blockDim(32, 32);
+    // First matrix is M x K and has stride (K, 1)
+    // Second matrix is K x N and has stride (1, K)
+    int m = seq_len, n = seq_len;
+    int k = d_head;
+    mat_mul<mm1_blockDim.x, mm1_blockDim.y><<<mm1_gridDim, mm1_blockDim>>>(m, n, k, Q, k, 1, K, 1, k, mat);
+    // Now mat is (QK^T), row-major, softmax by row
+    dim3 s_gridDim(CEIL_DIV(seq_len, 128));
+    dim3 s_blockDim(128);
+    softmax<<<s_gridDim, s_blockDim>>>(n, mat);
+    // Finally another mat mul between mat and V
+    // TODO: Switch up
+    dim3 mm2_gridDim(CEIL_DIV(seq_len, 32), CEIL_DIV(seq_len, 32));
+    constexpr dim3 mm2_blockDim(32, 32);
+    mat_mul<mm2_blockDim.x, mm2_blockDim.y><<<mm2_gridDim, mm2_blockDim>>>(m, k, n, mat, n, 1, V, k, 1, out);
 }
 
 void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
-                float *K, float *V, float *out){
+                float *K, float *V, float *out, float *mat){
     switch(kernel_num){
         case 0:
-            // do something
+            run_attn_naive(d_head, seq_len, Q, K, V, out, mat);
             break;
         default:
             throw std::invalid_argument("Unknown kernel number");

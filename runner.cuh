@@ -1,5 +1,4 @@
 #pragma once
-#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <fstream>
 #include <stdio.h>
@@ -23,4 +22,4 @@ float get_current_sec();                        // Get the current moment
 float cpu_elapsed_time(float &beg, float &end); // Calculate time difference
 
 void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
-                float *K, float *V, float *out);
+                float *K, float *V, float *out, float *mat);

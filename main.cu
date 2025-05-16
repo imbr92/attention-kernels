@@ -58,6 +58,8 @@ int main(int argc, char **argv){
 
     float *Q = nullptr, *K = nullptr, *V = nullptr, *out = nullptr, *ref = nullptr;
     float *dQ = nullptr, *dK = nullptr, *dV = nullptr, *dout = nullptr, *dref = nullptr;
+    // Temporaries to hold seq_len dim vector following softmax and seq_len^2 matrix following QKT for naive case
+    float *dmat = nullptr;
 
     Q = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
     K = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
@@ -74,6 +76,8 @@ int main(int argc, char **argv){
     cudaCheck(cudaMalloc((void **)&dV, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dref, sizeof(float) * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dout, sizeof(float) * MAX_D_HEAD));
+    // Hopefully not too big to materialize for naive check
+    cudaCheck(cudaMalloc((void **)&dmat, sizeof(float) * MAX_SEQ_LEN * MAX_SEQ_LEN));
 
     cudaCheck(cudaMemcpy(dQ, Q, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD,
                          cudaMemcpyHostToDevice));
@@ -90,11 +94,8 @@ int main(int argc, char **argv){
         // Verify the correctness of the calculation, and execute it once before the
         // kernel function timing to avoid cold start errors
         if(kernel_num != 0){
-            void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
-            float *K, float *V, float *out);
-
-            run_kernel(0, dhead, seqlen, dQ, dK, dV, dref);
-            run_kernel(kernel_num, dhead, seqlen, dQ, dK, dV, dout);
+            run_kernel(0, dhead, seqlen, dQ, dK, dV, dref, dmat);
+            run_kernel(kernel_num, dhead, seqlen, dQ, dK, dV, dout, dmat);
             cudaCheck(cudaDeviceSynchronize());
             cudaCheck(cudaGetLastError()); // Check for async errors during kernel run
             cudaMemcpy(ref, dref, sizeof(float) * dhead, cudaMemcpyDeviceToHost);
@@ -126,7 +127,7 @@ int main(int argc, char **argv){
         cudaEventRecord(beg);
         for(int j = 0; j < repeat_times; j++){
             // We don't reset dC between runs to save time
-            run_kernel(kernel_num, dhead, seqlen, dQ, dK, dV, dout);
+            run_kernel(kernel_num, dhead, seqlen, dQ, dK, dV, dout, dmat);
         }
         cudaEventRecord(end);
         cudaEventSynchronize(beg);
