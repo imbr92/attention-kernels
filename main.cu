@@ -4,6 +4,8 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+#include <array>
+#include <algorithm>
 
 #include "runner.cuh"
 
@@ -14,12 +16,19 @@ const std::string errLogFile = "flashAttnValidationFailure.txt";
 const int MIN_KERNEL_NO = 0;
 const int MAX_KERNEL_NO = 1;
 
-// Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
-const std::vector<int> d_head = {64};
-const std::vector<int> seq_len = {128};
+// // Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
+// const std::vector<int> d_head = {64};
+// const std::vector<int> seq_len = {128};
+//
+// const int MAX_D_HEAD = 64;
+// const int MAX_SEQ_LEN = 128;
 
-const int MAX_D_HEAD = 64;
-const int MAX_SEQ_LEN = 128;
+// Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
+const std::array<int, 1> d_head = {256};
+const std::array<int, 1> seq_len = {4096};
+
+const int MAX_D_HEAD = *std::max_element(d_head.begin(), d_head.end());
+const int MAX_SEQ_LEN = *std::max_element(seq_len.begin(), seq_len.end());
 
 
 int main(int argc, char **argv){
@@ -64,7 +73,7 @@ int main(int argc, char **argv){
     Q = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
     K = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
     V = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
-    out = (float *)malloc(sizeof(float) * MAX_D_HEAD);
+    out = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
     ref = (float *)malloc(sizeof(float) * MAX_D_HEAD);
 
     randomize_matrix(Q, MAX_SEQ_LEN * MAX_D_HEAD);
@@ -75,7 +84,7 @@ int main(int argc, char **argv){
     cudaCheck(cudaMalloc((void **)&dK, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dV, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dref, sizeof(float) * MAX_D_HEAD));
-    cudaCheck(cudaMalloc((void **)&dout, sizeof(float) * MAX_D_HEAD));
+    cudaCheck(cudaMalloc((void **)&dout, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     // Hopefully not too big to materialize for naive check
     cudaCheck(cudaMalloc((void **)&dmat, sizeof(float) * MAX_SEQ_LEN * MAX_SEQ_LEN));
 

@@ -22,6 +22,8 @@ void cudaCheck(cudaError_t error, const char *file, int line){
     }
 };
 
+#define cudaCheck(err) (cudaCheck(err, __FILE__, __LINE__))
+
 void CudaDeviceInfo(){
     int deviceId;
 
@@ -128,15 +130,22 @@ void run_attn_naive(int d_head, int seq_len, float *Q, float *K,
     int m = seq_len, n = seq_len;
     int k = d_head;
     mat_mul<mm1_blockDim.x, mm1_blockDim.y><<<mm1_gridDim, mm1_blockDim>>>(m, n, k, Q, k, 1, K, 1, k, mat);
+    cudaDeviceSynchronize();
+    cudaCheck(cudaGetLastError());
+
     // Now mat is (QK^T), row-major, softmax by row
     dim3 s_gridDim(CEIL_DIV(seq_len, 128));
-    dim3 s_blockDim(128);
-    softmax<<<s_gridDim, s_blockDim>>>(n, mat);
+    constexpr dim3 s_blockDim(128);
+    softmax<s_blockDim.x><<<s_gridDim, s_blockDim>>>(n, mat);
+    cudaDeviceSynchronize();
+    cudaCheck(cudaGetLastError());
     // Finally another mat mul between mat and V
     // TODO: Switch up
-    dim3 mm2_gridDim(CEIL_DIV(seq_len, 32), CEIL_DIV(seq_len, 32));
+    dim3 mm2_gridDim(CEIL_DIV(seq_len, 32), CEIL_DIV(d_head, 32));
     constexpr dim3 mm2_blockDim(32, 32);
     mat_mul<mm2_blockDim.x, mm2_blockDim.y><<<mm2_gridDim, mm2_blockDim>>>(m, k, n, mat, n, 1, V, k, 1, out);
+    cudaDeviceSynchronize();
+    cudaCheck(cudaGetLastError());
 }
 
 void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
