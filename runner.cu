@@ -134,8 +134,9 @@ void run_attn_naive(int d_head, int seq_len, float *Q, float *K,
     cudaCheck(cudaGetLastError());
 
     // Now mat is (QK^T), row-major, softmax by row
-    dim3 s_gridDim(CEIL_DIV(seq_len, 128));
-    constexpr dim3 s_blockDim(128);
+    // No benefit in block being > warp size since we don't use shared mem?
+    dim3 s_gridDim(CEIL_DIV(seq_len, 32));
+    constexpr dim3 s_blockDim(32);
     softmax<s_blockDim.x><<<s_gridDim, s_blockDim>>>(n, mat);
     cudaDeviceSynchronize();
     cudaCheck(cudaGetLastError());

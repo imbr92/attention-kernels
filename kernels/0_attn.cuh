@@ -13,6 +13,8 @@ __global__ void softmax(int N, float *mat){
     const int tx = threadIdx.x; // row in output
     const int bx = blockIdx.x;
 
+    if(bx * BLOCK_ROWS + tx >= N) return;
+
     // Fwd by block
     mat += bx * BLOCK_ROWS * N;
 
@@ -44,6 +46,8 @@ __global__ void mat_mul(int m, int n, int k, float *A, int a_stride0, int a_stri
     const int ty = threadIdx.y; // col in output
     const int bx = blockIdx.x;
     const int by = blockIdx.y;
+
+    if(tx + bx * BLOCK_ROWS >= m || ty + by * BLOCK_COLS >= n) return;
 
     // Fwd A/B/out to block starting pos
     A += bx * BLOCK_ROWS * a_stride0;

@@ -3,8 +3,8 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
-#include <vector>
 #include <array>
+#include <assert.h>
 #include <algorithm>
 
 #include "runner.cuh"
@@ -16,16 +16,12 @@ const std::string errLogFile = "flashAttnValidationFailure.txt";
 const int MIN_KERNEL_NO = 0;
 const int MAX_KERNEL_NO = 1;
 
-// // Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
-// const std::vector<int> d_head = {64};
-// const std::vector<int> seq_len = {128};
-//
-// const int MAX_D_HEAD = 64;
-// const int MAX_SEQ_LEN = 128;
 
 // Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
-const std::array<int, 1> d_head = {256};
-const std::array<int, 1> seq_len = {4096};
+const std::array<int, 1> d_head = {8};
+const std::array<int, 1> seq_len = {16};
+// const std::array<int, 1> d_head = {64};
+// const std::array<int, 1> seq_len = {128};
 
 const int MAX_D_HEAD = *std::max_element(d_head.begin(), d_head.end());
 const int MAX_SEQ_LEN = *std::max_element(seq_len.begin(), seq_len.end());
@@ -74,7 +70,7 @@ int main(int argc, char **argv){
     K = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
     V = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
     out = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
-    ref = (float *)malloc(sizeof(float) * MAX_D_HEAD);
+    ref = (float *)malloc(sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD);
 
     randomize_matrix(Q, MAX_SEQ_LEN * MAX_D_HEAD);
     randomize_matrix(K, MAX_SEQ_LEN * MAX_D_HEAD);
@@ -83,7 +79,7 @@ int main(int argc, char **argv){
     cudaCheck(cudaMalloc((void **)&dQ, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dK, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dV, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
-    cudaCheck(cudaMalloc((void **)&dref, sizeof(float) * MAX_D_HEAD));
+    cudaCheck(cudaMalloc((void **)&dref, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     cudaCheck(cudaMalloc((void **)&dout, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD));
     // Hopefully not too big to materialize for naive check
     cudaCheck(cudaMalloc((void **)&dmat, sizeof(float) * MAX_SEQ_LEN * MAX_SEQ_LEN));
@@ -98,7 +94,11 @@ int main(int argc, char **argv){
     int repeat_times = 50;
     for(int dhead : d_head){
         for(int seqlen : seq_len){
-        std::cout << "Dimensions: d_head=" << dhead << ", seq_len= " << seqlen << std::endl;
+            std::cout << "Dimensions: d_head=" << dhead << ", seq_len= " << seqlen << std::endl;
+
+            // Not tested without this
+            assert(dhead == MAX_D_HEAD);
+            assert(seqlen == MAX_SEQ_LEN);
 
         // Verify the correctness of the calculation, and execute it once before the
         // kernel function timing to avoid cold start errors
@@ -107,8 +107,8 @@ int main(int argc, char **argv){
             run_kernel(kernel_num, dhead, seqlen, dQ, dK, dV, dout, dmat);
             cudaCheck(cudaDeviceSynchronize());
             cudaCheck(cudaGetLastError()); // Check for async errors during kernel run
-            cudaMemcpy(ref, dref, sizeof(float) * dhead, cudaMemcpyDeviceToHost);
-            cudaMemcpy(out, dout, sizeof(float) * dhead, cudaMemcpyDeviceToHost);
+            cudaMemcpy(ref, dref, sizeof(float) * dhead * seqlen, cudaMemcpyDeviceToHost);
+            cudaMemcpy(out, dout, sizeof(float) * dhead * seqlen, cudaMemcpyDeviceToHost);
 
             if(!verify_matrix(ref, out,  dhead)){
                 std::cout
@@ -125,9 +125,9 @@ int main(int argc, char **argv){
                     fs << "V:\n";
                     print_matrix(V, seqlen, dhead, fs);
                     fs << "expected output:\n";
-                    print_matrix(ref, 1, dhead, fs);
+                    print_matrix(ref, seqlen, dhead, fs);
                     fs << "output:\n";
-                    print_matrix(out, 1, dhead, fs);
+                    print_matrix(out, seqlen, dhead, fs);
                 }
                 exit(EXIT_FAILURE);
             }
@@ -146,7 +146,7 @@ int main(int argc, char **argv){
 
         // TODO: Double check calc
         // approximate: QK^T = 2 N^2 * d, softmax = N^2, x * V = 2Nd
-        int64_t flops = 2 * seqlen * (seqlen + 1) * dhead + seqlen * seqlen;
+        int64_t flops = 2LL * seqlen * (seqlen + 1) * dhead + seqlen * seqlen;
         printf(
             "Average elapsed time: (%7.6f) s, performance: (%7.1f) GFLOPS. seq_len: "
             "(%d), d_head: (%d).\n",
