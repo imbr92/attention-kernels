@@ -149,11 +149,32 @@ void run_attn_naive(int d_head, int seq_len, float *Q, float *K,
     cudaCheck(cudaGetLastError());
 }
 
+// template <int BR, int BC, int MAX_D_HEAD>
+// __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, const float *K, const float *V, float *out){
+
+void run_attn_1(int d_head, int seq_len, float *Q, float *K,
+                    float *V, float *out){
+
+    const int BR = 8;
+    const int BC = 4;
+    const int MAX_D_HEAD = 256;
+    const int WARP_SIZE = 32;
+    dim3 fa_gridDim(CEIL_DIV(seq_len, WARP_SIZE));
+    constexpr dim3 fa_blockDim(WARP_SIZE);
+    flash_attn<BR, BC, MAX_D_HEAD><<<fa_gridDim, fa_blockDim>>>(seq_len, d_head, Q, K, V, out);
+    cudaDeviceSynchronize();
+    cudaCheck(cudaGetLastError());
+}
+
+
 void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
                 float *K, float *V, float *out, float *mat){
     switch(kernel_num){
         case 0:
             run_attn_naive(d_head, seq_len, Q, K, V, out, mat);
+            break;
+        case 1:
+            run_attn_1(d_head, seq_len, Q, K, V, out);
             break;
         default:
             throw std::invalid_argument("Unknown kernel number");

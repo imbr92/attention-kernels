@@ -47,12 +47,15 @@ template<int BR, int BC, int MAX_D_HEAD>
 __device__ inline void compute_PlmO(float (&S_tile)[BR][BC], float (&l_vec)[BR], float (&m_vec)[BR], float (&O_tile)[BR][MAX_D_HEAD], int d_head, const float (&V_tile)[BC][MAX_D_HEAD]){
     const int tx = threadIdx.x;
 
-    __shared__ float cur_max[BR] = -INF;
+    __shared__ float cur_max[BR];
     // Low thread util in warp
     if(tx < BR){
+        cur_max[tx] = -INF;
+        l_vec[tx] = 0.0f;
+        m_vec[tx] = -INF;
 
         for(int i = 0; i < BC; ++i){
-            cur_max[tx] = max(cur_max, S_tile[tx][i]);
+            cur_max[tx] = max(cur_max[tx], S_tile[tx][i]);
         }
 
         cur_max[tx] = max(cur_max[tx], m_vec[tx]);
@@ -94,13 +97,13 @@ __device__ inline void compute_PlmO(float (&S_tile)[BR][BC], float (&l_vec)[BR],
 
         m_vec[tx] = cur_max[tx];
 
-        float cur_sum[BR] = 0.0f;
+        float cur_sum = 0.0f;
 
         for(int i = 0; i < BC; ++i){
-            cur_sum[tx] = cur_sum[tx] + S_tile[tx][i];
+            cur_sum = cur_sum + S_tile[tx][i];
         }
 
-        l_vec[tx] = l_vec[tx] + cur_sum[tx];
+        l_vec[tx] = l_vec[tx] + cur_sum;
     }
 
     for(int offset = 0; offset < BR * d_head; offset += warpSize){
@@ -145,8 +148,8 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
     __shared__ float KT_tile[MAX_D_HEAD][BC];
     __shared__ float V_tile[BC][MAX_D_HEAD];
     __shared__ float S_tile[BR][BC];
-    __shared__ float l_vec[BR] = 0.0f;
-    __shared__ float m_vec[BR] = -INF;
+    __shared__ float l_vec[BR];
+    __shared__ float m_vec[BR];
     __shared__ float O_tile[BR][MAX_D_HEAD];
 
     assert(BR * d_head % warpSize == 0);
@@ -188,7 +191,7 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
         // Now S_tile = P_tile + l, m and O are up to date
     }
 
-    normalize_O(O_tile, l_vec);
+    normalize_O(O_tile, l_vec, d_head);
 
     // Write O_tile to GMEM
     out += blockIdx.x * BR;
