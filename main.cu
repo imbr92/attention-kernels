@@ -111,6 +111,7 @@ int main(int argc, char **argv){
             cudaMemcpy(out, dout, sizeof(float) * dhead * seqlen, cudaMemcpyDeviceToHost);
 
             if(!verify_matrix(ref, out,  dhead)){
+            // if(true){
                 std::cout
                     << "Failed to pass the correctness verification against Naive Attention Implementation "
                     << std::endl;

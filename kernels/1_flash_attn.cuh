@@ -10,11 +10,17 @@
 #define LOG2_E 1.4426950408889634f
 #define INF 1e30f
 
+__device__ inline float fast_exp(float x){
+    return exp2f(LOG2_E * x);
+}
+
 // Switch to WMMA
 template <int BR, int BC, int MAX_D_HEAD>
 __device__ inline void compute_QKT(const float (&Q_tile)[BR][MAX_D_HEAD], const float (&KT_tile)[MAX_D_HEAD][BC], const int d_head, float (&S_tile)[BR][BC]){
     // Low thread util in warp unless BR * BC >= warpSize
+#ifdef DEBUG
     assert(BR * BC >= warpSize);
+#endif
 
     for(int offset = 0; offset < BR * BC; offset += warpSize){
         const int tx = (threadIdx.x + offset) % BC;
@@ -26,6 +32,35 @@ __device__ inline void compute_QKT(const float (&Q_tile)[BR][MAX_D_HEAD], const 
 
         S_tile[ty][tx] = reg;
     }
+
+#ifdef DEBUG
+    if(threadIdx.x == 0 && blockIdx.x == 0){
+        printf("Q = [[");
+        for(int i = 0; i < BR; ++i){
+            for(int j = 0; j < d_head; ++j){
+                printf("%f, ", Q_tile[i][j]);
+            }
+            printf("],\n[");
+        }
+
+        printf("\nKT = [[");
+        for(int i = 0; i < d_head; ++i){
+            for(int j = 0; j < BC; ++j){
+                printf("%f, ", KT_tile[i][j]);
+            }
+            printf("],\n[");
+        }
+
+        printf("\nS = [[");
+        for(int i = 0; i < BR; ++i){
+            for(int j = 0; j < BC; ++j){
+                printf("%f, ", S_tile[i][j]);
+            }
+            printf("],\n[");
+        }
+    }
+#endif
+
 }
 
 // Switch to WMMA
@@ -51,18 +86,18 @@ __device__ inline void compute_PlmO(float (&S_tile)[BR][BC], float (&l_vec)[BR],
     // Low thread util in warp
     if(tx < BR){
         cur_max[tx] = -INF;
-        l_vec[tx] = 0.0f;
-        m_vec[tx] = -INF;
 
         for(int i = 0; i < BC; ++i){
             cur_max[tx] = max(cur_max[tx], S_tile[tx][i]);
         }
 
         cur_max[tx] = max(cur_max[tx], m_vec[tx]);
-        l_vec[tx] =  exp2f((m_vec[tx] - cur_max[tx]) * LOG2_E) * l_vec[tx];
+        l_vec[tx] =  fast_exp(m_vec[tx] - cur_max[tx]) * l_vec[tx];
     }
 
+#ifdef DEBUG
     assert(blockDim.x == warpSize);
+#endif
     __syncwarp();
 
     // Low thread util in warp unless BR * BC >= warpSize
@@ -70,16 +105,18 @@ __device__ inline void compute_PlmO(float (&S_tile)[BR][BC], float (&l_vec)[BR],
     for(int offset = 0; offset < BR * BC; offset += warpSize){
         const int tx = (threadIdx.x + offset) % BC;
         const int ty = (threadIdx.x + offset) / BC;
-        S_tile[ty][tx] = exp2f(S_tile[ty][tx] - cur_max[ty]);
+        S_tile[ty][tx] = fast_exp(S_tile[ty][tx] - cur_max[ty]);
     }
 
     for(int offset = 0; offset < BR * d_head; offset += warpSize){
         const int tx = (threadIdx.x + offset) % d_head;
         const int ty = (threadIdx.x + offset) / d_head;
-        O_tile[ty][tx] = 1/exp2f(cur_max[ty] - m_vec[ty]) * O_tile[ty][tx];
+        O_tile[ty][tx] = 1/fast_exp(cur_max[ty] - m_vec[ty]) * O_tile[ty][tx];
     }
 
+#ifdef DEBUG
     assert(blockDim.x == warpSize);
+#endif
 
     __shared__ float temp[BR][MAX_D_HEAD];
 
@@ -134,8 +171,11 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
 
     // TODO: Move to asserts to runner
     // Remove once adding dynamic smem?
+
+#ifdef DEBUG
     assert(MAX_D_HEAD >= d_head);
     assert(blockDim.x == warpSize);
+#endif
 
     // Load BR x d region of Q
     // Loop through d x BC regions of K^T (and BC x d regions of V)
@@ -152,7 +192,15 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
     __shared__ float m_vec[BR];
     __shared__ float O_tile[BR][MAX_D_HEAD];
 
+    if(threadIdx.x < BR){
+        l_vec[threadIdx.x] = 0.0f;
+        m_vec[threadIdx.x] = -INF;
+    }
+
+#ifdef DEBUG
     assert(BR * d_head % warpSize == 0);
+#endif
+
     for(int i = 0; i < BR * d_head; i += warpSize){
         const int idx = i + tid;
         const int Q_row = (idx / d_head) + bid * BR;
@@ -160,7 +208,18 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
         Q_tile[idx / d_head][idx % d_head] = Q[Q_row * d_head + Q_col];
     }
 
+#ifdef DEBUG
     assert(seq_len % BC == 0);
+    if(threadIdx.x == 0){
+        for(int i = 0; i < BR; ++i){
+            for(int j = 0; j < d_head; ++j){
+                assert(Q[(bid * BR * d_head + i * d_head + j)] == Q_tile[i][j]);
+            }
+        }
+    }
+#endif
+
+
     // Main Loop, col offset in K^T
     for(int col_offset = 0; col_offset < seq_len; col_offset += BC){
 
@@ -172,6 +231,16 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
             KT_tile[idx % d_head][idx / d_head] = K[K_row * d_head + K_col];
         }
 
+#ifdef DEBUG
+    if(threadIdx.x == 0){
+        for(int i = 0; i < BC; ++i){
+            for(int j = 0; j < d_head; ++j){
+                assert(K[(col_offset * d_head + i * d_head + j)] == KT_tile[j][i]);
+            }
+        }
+    }
+#endif
+
         // Load BC x d region of V
         for(int i = 0; i < BC * d_head; i += warpSize){
             const int idx = i + tid;
@@ -180,6 +249,16 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
             const int V_col = (idx % d_head);
             V_tile[idx / d_head][idx % d_head] = V[V_row * d_head + V_col];
         }
+
+#ifdef DEBUG
+    if(threadIdx.x == 0){
+        for(int i = 0; i < BC; ++i){
+            for(int j = 0; j < d_head; ++j){
+                assert(V[(col_offset * d_head + i * d_head + j)] == V_tile[i][j]);
+            }
+        }
+    }
+#endif
 
         // Compute Q @ KT --> shared memory tile of size (BR, BC)
         // Can do concurrently with loading of V tile to SMEM
@@ -194,13 +273,13 @@ __global__ void flash_attn(const int seq_len, const int d_head, const float *Q, 
     normalize_O(O_tile, l_vec, d_head);
 
     // Write O_tile to GMEM
-    out += blockIdx.x * BR;
+    out += blockIdx.x * BR * d_head;
 
     for(int i = 0; i < BR * d_head; i += warpSize){
         const int idx = i + tid;
         const int O_row = (idx / d_head);
         const int O_col = (idx % d_head);
-        O_tile[idx / d_head][idx % d_head] = out[O_row * d_head + O_col];
+        out[O_row * d_head + O_col] = O_tile[idx / d_head][idx % d_head];
     }
 
 }
