@@ -153,8 +153,8 @@ __device__ inline void compute_PlmO(float (&S_tile)[BR][BC], float (&l_vec)[BR],
 template<int BR, int MAX_D_HEAD>
 __device__ inline void normalize_O(float (&O_tile)[BR][MAX_D_HEAD], float (&l_vec)[BR], int d_head){
     for(int offset = 0; offset < BR * d_head; offset += warpSize){
-        const int row = (threadIdx.x + offset) % d_head;
-        const int col = (threadIdx.x + offset) / d_head;
+        const int row = (threadIdx.x + offset) / d_head;
+        const int col = (threadIdx.x + offset) % d_head;
         O_tile[row][col] /= l_vec[row];
     }
 }

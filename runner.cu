@@ -155,13 +155,17 @@ void run_attn_naive(int d_head, int seq_len, float *Q, float *K,
 void run_attn_1(int d_head, int seq_len, float *Q, float *K,
                     float *V, float *out){
 
-    const int BR = 8;
-    const int BC = 4;
-    const int MAX_D_HEAD = 128;
+    const int BR = 4;
+    const int BC = 8;
+    const int MAX_D_HEAD = 64;
     const int WARP_SIZE = 32;
     assert(MAX_D_HEAD >= d_head);
     dim3 fa_gridDim(CEIL_DIV(seq_len, BR));
     constexpr dim3 fa_blockDim(WARP_SIZE);
+
+    // cudaFuncAttributes attr;
+    // cudaFuncGetAttributes(&attr, flash_attn<BR, BC, MAX_D_HEAD>);
+    // printf("Static shared memory usage: %zu bytes\n", attr.sharedSizeBytes);
     flash_attn<BR, BC, MAX_D_HEAD><<<fa_gridDim, fa_blockDim>>>(seq_len, d_head, Q, K, V, out);
     cudaDeviceSynchronize();
     cudaCheck(cudaGetLastError());

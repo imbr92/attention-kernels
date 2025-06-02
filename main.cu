@@ -18,10 +18,10 @@ const int MAX_KERNEL_NO = 1;
 
 
 // Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
-const std::array<int, 1> d_head = {8};
-const std::array<int, 1> seq_len = {16};
-// const std::array<int, 1> d_head = {64};
-// const std::array<int, 1> seq_len = {128};
+// const std::array<int, 1> d_head = {8};
+// const std::array<int, 1> seq_len = {16};
+const std::array<int, 1> d_head = {64};
+const std::array<int, 1> seq_len = {128};
 
 const int MAX_D_HEAD = *std::max_element(d_head.begin(), d_head.end());
 const int MAX_SEQ_LEN = *std::max_element(seq_len.begin(), seq_len.end());
