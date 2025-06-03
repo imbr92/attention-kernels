@@ -171,6 +171,38 @@ void run_attn_1(int d_head, int seq_len, float *Q, float *K,
     cudaCheck(cudaGetLastError());
 }
 
+void run_attn_2(int d_head, int seq_len, float *Q, float *K,
+                    float *V, float *out){
+
+    const int BR = 16;
+    const int BC = 16;
+    const int MAX_SEQ_LEN = 8192;
+    const int MAX_D_HEAD = 128;
+    const int WARP_SIZE = 32;
+
+    using globals = globals<BR, BC>;
+    globals::_Qgl  q_arg{Q, nullptr, nullptr, MAX_SEQ_LEN, MAX_D_HEAD};
+    globals::_KVgl  k_arg{K, nullptr, nullptr, MAX_SEQ_LEN, MAX_D_HEAD};
+    globals::_KVgl  v_arg{V, nullptr, nullptr, MAX_SEQ_LEN, MAX_D_HEAD};
+    globals::_Ogl  out_arg{out, nullptr, nullptr, MAX_SEQ_LEN, MAX_D_HEAD};
+    globals g{q_arg, k_arg, v_arg, out_arg};
+
+    unsigned long mem_size = 50480;
+    cudaFuncSetAttribute(
+        tk_flash_attn<BR, BC>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        mem_size
+    );
+
+    assert(MAX_D_HEAD >= d_head);
+
+    dim3 tk_fa_gridDim(CEIL_DIV(seq_len, BR));
+    constexpr dim3 tk_fa_blockDim(WARP_SIZE);
+
+    tk_flash_attn<BR, BC><<<tk_fa_gridDim, tk_fa_blockDim, mem_size>>>(g);
+    cudaDeviceSynchronize();
+    cudaCheck(cudaGetLastError());
+}
 
 void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
                 float *K, float *V, float *out, float *mat){
@@ -180,6 +212,9 @@ void run_kernel(int kernel_num, int d_head, int seq_len, float *Q,
             break;
         case 1:
             run_attn_1(d_head, seq_len, Q, K, V, out);
+            break;
+        case 2:
+            run_attn_2(d_head, seq_len, Q, K, V, out);
             break;
         default:
             throw std::invalid_argument("Unknown kernel number");

@@ -9,11 +9,13 @@
 ### Misc
 
 To Run
-- With Debug Checks (Slow): `nvcc main.cu runner.cu -o exec -DDEBUG && ./exec <kernel_num>`
-- Without Debug Checks: `nvcc main.cu runner.cu -o exec && ./exec <kernel_num>`
-- For profiling: `nvcc main.cu runner.cu -o exec -DPROFILE && sudo ncu ./exec <kernel_num>`
+- Standard: `nvcc -std=c++20 --gpu-architecture=sm_86 --expt-relaxed-constexpr main.cu runner.cu -o exec && ./exec <kernel_num>`
+- Debug (Slow): `nvcc -std=c++20 -DDEBUG --gpu-architecture=sm_86 --expt-relaxed-constexpr main.cu runner.cu -o exec && ./exec <kernel_num>`
+- Profiling: `nvcc -std=c++20 main.cu runner.cu -o exec -DPROFILE --gpu-architecture=sm_86 --expt-relaxed-constexpr && sudo ncu ./exec <kernel_num>`
 
-This has only been tested on an RTX 3070 (compute capability 8.6) and CUDA 12.8
+### Dependencies
+- This has only been tested on an RTX 3070 (compute capability 8.6) and CUDA 12.8
+- Requires [HazyResearch/ThunderKittens](https://github.com/HazyResearch/ThunderKittens)
 
 #### Credits
 - Benchmarking code from [siboehm/SGEMM_CUDA](https://github.com/siboehm/SGEMM_CUDA) (which was from [wangzyon/NVIDIA_SGEMM_PRACTICE](https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE))
