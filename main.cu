@@ -20,8 +20,8 @@ const int MAX_KERNEL_NO = 1;
 // Head vector dim (already multiplied W_Q @ X, etc. to get Q, K, V)
 // const std::array<int, 1> d_head = {8};
 // const std::array<int, 1> seq_len = {16};
-const std::array<int, 1> d_head = {64};
-const std::array<int, 1> seq_len = {128};
+const std::array<int, 1> d_head = {128};
+const std::array<int, 1> seq_len = {8192};
 
 const int MAX_D_HEAD = *std::max_element(d_head.begin(), d_head.end());
 const int MAX_SEQ_LEN = *std::max_element(seq_len.begin(), seq_len.end());
@@ -90,7 +90,9 @@ int main(int argc, char **argv){
                          cudaMemcpyHostToDevice));
     cudaCheck(cudaMemcpy(dV, V, sizeof(float) * MAX_SEQ_LEN * MAX_D_HEAD,
                          cudaMemcpyHostToDevice));
-
+#ifdef PROFILE
+    run_kernel(kernel_num, MAX_D_HEAD, MAX_SEQ_LEN, dQ, dK, dV, dout, dmat);
+#else
     int repeat_times = 50;
     for(int dhead : d_head){
         for(int seqlen : seq_len){
@@ -161,6 +163,7 @@ int main(int argc, char **argv){
         //                      cudaMemcpyDeviceToDevice));
         }
     }
+#endif
 
     // Free up CPU and GPU space
     free(Q);

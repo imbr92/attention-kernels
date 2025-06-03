@@ -157,7 +157,7 @@ void run_attn_1(int d_head, int seq_len, float *Q, float *K,
 
     const int BR = 4;
     const int BC = 8;
-    const int MAX_D_HEAD = 64;
+    const int MAX_D_HEAD = 128;
     const int WARP_SIZE = 32;
     assert(MAX_D_HEAD >= d_head);
     dim3 fa_gridDim(CEIL_DIV(seq_len, BR));

@@ -97,11 +97,11 @@ __device__ inline void compute_PlmO(float (&S_tile)[BR][BC], float (&l_vec)[BR],
 
 #ifdef DEBUG
     assert(blockDim.x == warpSize);
+    // Low thread util in warp unless BR * BC >= warpSize
+    assert(BR * BC >= warpSize);
 #endif
     __syncwarp();
 
-    // Low thread util in warp unless BR * BC >= warpSize
-    assert(BR * BC >= warpSize);
     for(int offset = 0; offset < BR * BC; offset += warpSize){
         const int tx = (threadIdx.x + offset) % BC;
         const int ty = (threadIdx.x + offset) / BC;
